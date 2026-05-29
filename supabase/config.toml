@@ -1,0 +1,25 @@
+project_id = "anki_parser"
+
+[api]
+enabled = true
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+major_version = 15
+
+[studio]
+enabled = true
+
+[inbucket]
+enabled = false
+
+[storage]
+enabled = true
+file_size_limit = "100MiB"
+
+[storage.buckets.submissions]
+public = false
+file_size_limit = "100MiB"
+allowed_mime_types = ["application/json"]
