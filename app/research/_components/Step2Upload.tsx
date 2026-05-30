@@ -123,7 +123,13 @@ function prepareFilesForUpload(
 
 export function Step2Upload() {
   const parsedFiles = useSubmissionStore((state) => state.draft.parsedFiles);
+  const exportRequirementsAcknowledged = useSubmissionStore(
+    (state) => state.draft.exportRequirementsAcknowledged,
+  );
   const setParsedFiles = useSubmissionStore((state) => state.setParsedFiles);
+  const setExportRequirementsAcknowledged = useSubmissionStore(
+    (state) => state.setExportRequirementsAcknowledged,
+  );
   const { navigateToStep } = useResearchSubmissionWizard();
   const dragDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -344,11 +350,20 @@ export function Step2Upload() {
     !hasEntries ||
     parsing ||
     (failedEntries.length > 0 && readyToParseEntries.length === 0);
+  const shouldPulseExportGuide = !exportRequirementsAcknowledged;
+
+  const handleGuideOpenChange = (open: boolean) => {
+    setGuideOpen(open);
+
+    if (open && !exportRequirementsAcknowledged) {
+      setExportRequirementsAcknowledged(true);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
       {/* ─────────── Anki export guide ─────────── */}
-      <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
+      <Dialog open={guideOpen} onOpenChange={handleGuideOpenChange}>
         <DialogContent className="!max-w-3xl">
           <DialogHeader>
             <DialogTitle>Before you upload</DialogTitle>
@@ -365,7 +380,7 @@ export function Step2Upload() {
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-600 text-xs font-semibold text-white">
                     1
                   </div>
-                  <p>Open the deck browser for the deck you want to share.</p>
+                  <p>Open the deck browser.</p>
                 </div>
 
                 <div className="flex gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
@@ -373,8 +388,8 @@ export function Step2Upload() {
                     2
                   </div>
                   <p>
-                    On mobile, press and hold the deck. On desktop, click the
-                    cog next to the deck. Then choose <Kbd>Export</Kbd>.
+                    On mobile, press and hold the deck(s) you want to share. On desktop, click the
+                    cog next to the deck(s). Then choose <Kbd>Export</Kbd>.
                   </p>
                 </div>
 
@@ -421,7 +436,10 @@ export function Step2Upload() {
             </div>
 
             <div className="flex justify-end">
-              <Button type="button" onClick={() => setGuideOpen(false)}>
+              <Button
+                type="button"
+                onClick={() => handleGuideOpenChange(false)}
+              >
                 Close guide
               </Button>
             </div>
@@ -445,7 +463,12 @@ export function Step2Upload() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => setGuideOpen(true)}
+            onClick={() => handleGuideOpenChange(true)}
+            className={cn(
+              "relative overflow-visible",
+              shouldPulseExportGuide &&
+                "border-orange-400/80 bg-orange-50 text-orange-900 shadow-md shadow-orange-200/70 motion-safe:animate-pulse motion-reduce:animate-none after:pointer-events-none after:absolute after:-inset-1 after:rounded-[inherit] after:border after:border-orange-300/70 after:content-[''] motion-safe:after:animate-ping motion-reduce:after:hidden",
+            )}
           >
             <Info className="mr-2 h-4 w-4" />
             Open export guide

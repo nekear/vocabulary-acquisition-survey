@@ -53,6 +53,7 @@ interface SubmissionStoreState {
   confirmation: SubmissionConfirmation | null;
   setCurrentStep: (step: StepNumber) => void;
   setLinkedProfile: (token: string, profile: UserProfile | null) => void;
+  setExportRequirementsAcknowledged: (acknowledged: boolean) => void;
   setUserProfile: (profile: UserProfile) => void;
   setParsedFiles: (parsedFiles: ParsedFile[]) => void;
   removeParsedFile: (fileId: string) => void;
@@ -151,6 +152,13 @@ export const useSubmissionStore = create<SubmissionStoreState>()(
             userProfile: profile
               ? normalizeUserProfile(profile)
               : state.draft.userProfile,
+          },
+        })),
+      setExportRequirementsAcknowledged: (acknowledged) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            exportRequirementsAcknowledged: acknowledged,
           },
         })),
       setUserProfile: (profile) =>
