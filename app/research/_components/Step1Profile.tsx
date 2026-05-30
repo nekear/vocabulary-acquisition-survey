@@ -85,7 +85,7 @@ export function Step1Profile() {
   const linked = previousToken.trim().length > 0;
 
   const {
-    formState: { errors, isValid },
+    formState: { errors },
     handleSubmit,
     reset,
     setValue,
@@ -121,9 +121,11 @@ export function Step1Profile() {
     }
   }, [linkDialogOpen, previousToken, resetLinkForm]);
 
-  const nativeLanguages = watch("native_languages");
-  const targetLanguages = watch("target_languages");
-  const domainInterests = watch("domain_interests");
+  const profileValues = watch();
+  const nativeLanguages = profileValues.native_languages ?? [];
+  const targetLanguages = profileValues.target_languages ?? [];
+  const domainInterests = profileValues.domain_interests ?? [];
+  const canContinue = userProfileSchema.safeParse(profileValues).success;
 
   const handleTargetLanguageSelection = (nextValues: string[]) => {
     const nextTargetLanguages = nextValues.map((value) => {
@@ -507,7 +509,7 @@ export function Step1Profile() {
 
         {/* ─────────── Continuing to deck upload after profile validation passes ─────────── */}
         <div className="flex justify-end">
-          <Button type="submit" disabled={!isValid}>
+          <Button type="submit" disabled={!canContinue}>
             <ArrowRight className="mr-2 h-4 w-4" />
             Continue
           </Button>
