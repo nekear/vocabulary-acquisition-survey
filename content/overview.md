@@ -1,4 +1,4 @@
-> For any queries, please contact [nekear.me@gmail.com](mailto:nekear.me@gmail.com).
+> For any queries, please contact [hi@nekear.me](mailto:hi@nekear.me).
 
 ## About the research
 
