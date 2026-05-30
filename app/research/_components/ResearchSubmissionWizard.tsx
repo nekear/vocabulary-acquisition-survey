@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { ConfirmationPanel } from "@/app/research/_components/ConfirmationPanel";
@@ -33,6 +33,7 @@ export function ResearchSubmissionWizard() {
   const currentStep = useSubmissionStore((state) => state.draft.currentStep);
   const confirmation = useSubmissionStore((state) => state.confirmation);
   const setCurrentStep = useSubmissionStore((state) => state.setCurrentStep);
+  const hasHandledInitialUrlRef = useRef(false);
 
   const queryStep = parseStep(searchParams.get("step"));
 
@@ -41,18 +42,27 @@ export function ResearchSubmissionWizard() {
       return;
     }
 
+    if (!hasHandledInitialUrlRef.current) {
+      hasHandledInitialUrlRef.current = true;
+      if (queryStep !== currentStep) {
+        router.replace(`${pathname}?step=${currentStep}`, {
+          scroll: false,
+        });
+      }
+      return;
+    }
+
     if (!queryStep) {
       router.replace(`${pathname}?step=${currentStep}`, {
         scroll: false,
       });
+      return;
     }
-  }, [confirmation, currentStep, pathname, queryStep, router]);
 
-  useEffect(() => {
-    if (!confirmation && queryStep && queryStep !== currentStep) {
+    if (queryStep !== currentStep) {
       setCurrentStep(queryStep);
     }
-  }, [confirmation, currentStep, queryStep, setCurrentStep]);
+  }, [confirmation, currentStep, pathname, queryStep, router, setCurrentStep]);
 
   if (confirmation) {
     return (
