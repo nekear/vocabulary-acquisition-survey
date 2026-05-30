@@ -49,6 +49,7 @@ import { usePiiScanner } from "@/lib/hooks/usePiiScanner";
 import { cn } from "@/lib/utils";
 
 const UNSPECIFIED_LANGUAGE_LABEL = "Unspecified";
+const OPTIONAL_SHORTCUTS_PULSE_DECK_THRESHOLD = 3;
 
 function createDefaultAssignment(): DeckAssignment {
   return {
@@ -82,6 +83,7 @@ export function Step3DeckConfiguration() {
   const [bulkLanguage, setBulkLanguage] = useState<LanguageCode | "">("");
   const [bulkScheduler, setBulkScheduler] = useState<SchedulerKind | "">("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [shortcutsSeen, setShortcutsSeen] = useState(false);
   const [activeDeckId, setActiveDeckId] = useState<number | null>(null);
   const index = useMemo(() => buildSubmissionIndex(parsedFiles), [parsedFiles]);
   const { scans } = usePiiScanner(parsedFiles);
@@ -205,6 +207,9 @@ export function Step3DeckConfiguration() {
     ? (assignments[String(activeDeck.deck_id)]?.scheduler ??
       "No scheduler selected")
     : "No scheduler selected";
+  const shouldPulseOptionalShortcuts =
+    index.directDecks.length > OPTIONAL_SHORTCUTS_PULSE_DECK_THRESHOLD &&
+    !shortcutsSeen;
 
   return (
     <div className="flex flex-col gap-4">
@@ -247,7 +252,12 @@ export function Step3DeckConfiguration() {
       <QuestionCard className="p-0">
         <Collapsible
           open={shortcutsOpen}
-          onOpenChange={setShortcutsOpen}
+          onOpenChange={(open) => {
+            setShortcutsOpen(open);
+            if (open) {
+              setShortcutsSeen(true);
+            }
+          }}
           className="flex flex-col"
         >
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
@@ -262,7 +272,15 @@ export function Step3DeckConfiguration() {
             </div>
             {index.directDecks.length > 0 ? (
               <CollapsibleTrigger asChild>
-                <Button type="button" variant="outline" className="shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={cn(
+                    "relative overflow-visible shrink-0",
+                    shouldPulseOptionalShortcuts &&
+                      "border-emerald-500/80 bg-emerald-50 text-emerald-900 shadow-md shadow-emerald-200/70 motion-safe:animate-pulse motion-reduce:animate-none after:pointer-events-none after:absolute after:-inset-1 after:rounded-[inherit] after:border after:border-emerald-300/70 after:content-[''] motion-safe:after:animate-ping motion-reduce:after:hidden",
+                  )}
+                >
                   Optional shortcuts
                   <ChevronDown
                     className={cn(
