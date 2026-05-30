@@ -3,15 +3,13 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { RESEARCH_STORAGE_KEY, type SchedulerKind } from "@/lib/constants";
+import { RESEARCH_STORAGE_KEY } from "@/lib/constants";
 import {
-  buildSubmissionIndex,
   createEmptyDeckReviewConfig,
   emptyUserProfile,
   initializeDeckAssignments,
   initializeDeckReviewConfigs,
   initializeExcludedNoteIds,
-  isSchedulerKind,
   normalizeUserProfile,
 } from "@/lib/research";
 import type {
@@ -24,44 +22,30 @@ import type {
   UserProfile,
 } from "@/lib/types";
 
-const SUBMISSION_STORE_VERSION = 6;
+const SUBMISSION_STORE_VERSION = 7;
 
-interface PersistedDeckReviewConfig {
-  retainedTags: string[];
+interface PersistedDraft {
+  sessionId: string;
+  previousToken: string;
+  profilePrefilledFromLink: boolean;
+  exportRequirementsAcknowledged: boolean;
+  userProfile: UserProfile;
 }
 
-interface PersistedDraft extends Omit<
-  SubmissionDraft,
-  "deckReviewConfigs" | "excludedNoteIds"
-> {
-  deckReviewConfigs: Record<string, PersistedDeckReviewConfig>;
-  excludedNoteIds: number[];
-}
+type PersistedDraftInput = Partial<Omit<PersistedDraft, "userProfile">> & {
+  userProfile?: Partial<UserProfile> | null;
+};
 
-interface LegacyPersistedDeckConfig {
-  excludedCardIds: number[];
-  retainedTags: string[];
-}
-
-type LegacyUserProfile = Partial<UserProfile> & { scheduler?: unknown };
-
-interface LegacyPersistedDraft extends Partial<
-  Omit<
-    SubmissionDraft,
-    | "currentStep"
-    | "deckAssignments"
-    | "deckReviewConfigs"
-    | "excludedNoteIds"
-    | "userProfile"
-  >
-> {
-  currentStep?: number;
-  userProfile?: LegacyUserProfile;
-  deckAssignments?: Record<string, unknown>;
-  deckLanguageAssignments?: Record<string, unknown>;
-  deckReviewConfigs?: Record<string, PersistedDeckReviewConfig>;
-  deckConfigs?: Record<string, LegacyPersistedDeckConfig>;
-  excludedNoteIds?: number[];
+interface LegacyPersistedDraft extends PersistedDraftInput {
+  currentStep?: unknown;
+  parsedFiles?: unknown;
+  deckAssignments?: unknown;
+  deckLanguageAssignments?: unknown;
+  deckReviewConfigs?: unknown;
+  deckConfigs?: unknown;
+  excludedNoteIds?: unknown;
+  consent?: unknown;
+  pendingConfirmation?: unknown;
 }
 
 interface SubmissionStoreState {
@@ -108,209 +92,42 @@ function createDraft(): SubmissionDraft {
 
 function serializeDraft(draft: SubmissionDraft): PersistedDraft {
   return {
-    ...draft,
-    deckReviewConfigs: Object.fromEntries(
-      Object.entries(draft.deckReviewConfigs).map(([deckId, config]) => [
-        deckId,
-        {
-          retainedTags: [...config.retainedTags],
-        },
-      ]),
-    ),
-    excludedNoteIds: [...draft.excludedNoteIds],
+    sessionId: draft.sessionId,
+    previousToken: draft.previousToken,
+    profilePrefilledFromLink: draft.profilePrefilledFromLink,
+    exportRequirementsAcknowledged: draft.exportRequirementsAcknowledged,
+    userProfile: draft.userProfile,
   };
 }
 
-function deserializeDraft(value: PersistedDraft | undefined): SubmissionDraft {
+function deserializeDraft(
+  value: PersistedDraftInput | undefined,
+): SubmissionDraft {
+  const draft = createDraft();
+
   if (!value) {
-    return createDraft();
+    return draft;
   }
 
-  const hasCurrentParsedFiles = parsedFilesUseCurrentSchema(value.parsedFiles);
-  const parsedFiles = hasCurrentParsedFiles ? value.parsedFiles : [];
-  const deckAssignments = hasCurrentParsedFiles
-    ? initializeDeckAssignments(parsedFiles, value.deckAssignments)
-    : {};
-  const storedCurrentStep = normalizeStoredStep(value.currentStep);
-  const currentStep = hasCurrentParsedFiles
-    ? resetStepAfterMissingDeckScheduler(
-        storedCurrentStep,
-        parsedFiles,
-        deckAssignments,
-      )
-    : resetStepAfterStaleParse(storedCurrentStep);
-
   return {
-    ...value,
-    currentStep,
+    ...draft,
+    sessionId:
+      typeof value.sessionId === "string" && value.sessionId.length > 0
+        ? value.sessionId
+        : draft.sessionId,
+    previousToken:
+      typeof value.previousToken === "string" ? value.previousToken : "",
+    profilePrefilledFromLink: value.profilePrefilledFromLink ?? false,
     exportRequirementsAcknowledged:
       value.exportRequirementsAcknowledged ?? false,
     userProfile: normalizeUserProfile(value.userProfile),
-    parsedFiles,
-    deckAssignments,
-    deckReviewConfigs: hasCurrentParsedFiles
-      ? Object.fromEntries(
-          Object.entries(value.deckReviewConfigs).map(([deckId, config]) => [
-            deckId,
-            {
-              retainedTags: new Set(config.retainedTags),
-            },
-          ]),
-        )
-      : {},
-    excludedNoteIds: new Set(
-      hasCurrentParsedFiles ? value.excludedNoteIds : [],
-    ),
   };
-}
-
-function parsedFilesUseCurrentSchema(parsedFiles: ParsedFile[] | undefined) {
-  return (parsedFiles ?? []).every(
-    (parsedFile) =>
-      parsedFile.data.cards.every(
-        (card) => "queue" in card && "interval" in card && "due" in card,
-      ) &&
-      parsedFile.data.reviews.every(
-        (review) => "interval_before" in review && "interval_after" in review,
-      ),
-  );
-}
-
-function migrateLegacyStepToCurrent(step: number = 1): StepNumber {
-  if (step <= 3) {
-    return 1;
-  }
-
-  if (step === 4) {
-    return 2;
-  }
-
-  if (step === 5 || step === 6) {
-    return 3;
-  }
-
-  if (step === 7) {
-    return 4;
-  }
-
-  return 1;
-}
-
-function normalizeStoredStep(step: number = 1): StepNumber {
-  if (step === 1 || step === 2 || step === 3 || step === 4) {
-    return step;
-  }
-
-  return migrateLegacyStepToCurrent(step);
-}
-
-function resetStepAfterStaleParse(step: StepNumber = 1): StepNumber {
-  return step > 2 ? 2 : step;
-}
-
-function resetStepAfterMissingDeckScheduler(
-  step: StepNumber = 1,
-  parsedFiles: ParsedFile[],
-  deckAssignments: DeckAssignmentRecord,
-): StepNumber {
-  if (step <= 3) {
-    return step;
-  }
-
-  const index = buildSubmissionIndex(parsedFiles);
-  return index.directDecks.some(
-    (deck) => !deckAssignments[String(deck.deck_id)]?.scheduler,
-  )
-    ? 3
-    : step;
-}
-
-function legacyProfileScheduler(
-  profile: LegacyUserProfile | undefined,
-): SchedulerKind | null {
-  return isSchedulerKind(profile?.scheduler) ? profile.scheduler : null;
 }
 
 function migrateLegacyDraft(
   value: LegacyPersistedDraft | PersistedDraft | undefined,
 ): PersistedDraft {
-  if (!value) {
-    return serializeDraft(createDraft());
-  }
-
-  const legacyDraft = value as LegacyPersistedDraft;
-  const parsedFiles = parsedFilesUseCurrentSchema(legacyDraft.parsedFiles)
-    ? (legacyDraft.parsedFiles ?? [])
-    : [];
-  const index = buildSubmissionIndex(parsedFiles);
-  const excludedNoteIds = new Set<number>();
-
-  if (Array.isArray(legacyDraft.excludedNoteIds)) {
-    for (const noteId of legacyDraft.excludedNoteIds) {
-      excludedNoteIds.add(noteId);
-    }
-  } else {
-    for (const config of Object.values(legacyDraft.deckConfigs ?? {})) {
-      for (const cardId of config.excludedCardIds ?? []) {
-        const card = index.cardMap.get(cardId);
-        if (card) {
-          excludedNoteIds.add(card.note_id);
-        }
-      }
-    }
-  }
-
-  const deckReviewConfigs =
-    parsedFiles.length > 0
-      ? (legacyDraft.deckReviewConfigs ??
-        Object.fromEntries(
-          Object.entries(legacyDraft.deckConfigs ?? {}).map(
-            ([deckId, config]) => [
-              deckId,
-              {
-                retainedTags: [...(config.retainedTags ?? [])],
-              },
-            ],
-          ),
-        ))
-      : {};
-
-  const baseCurrentStep = migrateLegacyStepToCurrent(legacyDraft.currentStep);
-  const legacyScheduler = legacyProfileScheduler(legacyDraft.userProfile);
-  const deckAssignments =
-    parsedFiles.length > 0
-      ? initializeDeckAssignments(
-          parsedFiles,
-          legacyDraft.deckAssignments ??
-            legacyDraft.deckLanguageAssignments ??
-            {},
-          legacyScheduler,
-        )
-      : {};
-  const currentStep = resetStepAfterMissingDeckScheduler(
-    baseCurrentStep,
-    parsedFiles,
-    deckAssignments,
-  );
-
-  return {
-    sessionId: legacyDraft.sessionId ?? crypto.randomUUID(),
-    currentStep,
-    previousToken: legacyDraft.previousToken ?? "",
-    profilePrefilledFromLink: legacyDraft.profilePrefilledFromLink ?? false,
-    exportRequirementsAcknowledged:
-      legacyDraft.exportRequirementsAcknowledged ?? false,
-    userProfile: normalizeUserProfile(legacyDraft.userProfile),
-    parsedFiles,
-    deckAssignments,
-    deckReviewConfigs,
-    excludedNoteIds: parsedFiles.length > 0 ? [...excludedNoteIds] : [],
-    consent: legacyDraft.consent ?? {
-      publish_revlogs: false,
-      publish_userinfo: false,
-    },
-    pendingConfirmation: legacyDraft.pendingConfirmation ?? null,
-  } satisfies PersistedDraft;
+  return serializeDraft(deserializeDraft(value));
 }
 
 export const useSubmissionStore = create<SubmissionStoreState>()(

@@ -152,9 +152,8 @@ collected, excluded, and transformed **after** upload but before public release)
 
 ### Other client-side persistence and telemetry
 
-- **Wizard draft:** Zustand persists in-progress state to `localStorage` under
-  `research-submission-draft-v1` ([`lib/hooks/useSubmissionStore.ts`](lib/hooks/useSubmissionStore.ts)),
-  which can include parsed deck/note data until cleared or submitted.
+- **Wizard draft:** Zustand persists in-progress state of the first step to `localStorage` under
+  `research-submission-draft-v1` ([`lib/hooks/useSubmissionStore.ts`](lib/hooks/useSubmissionStore.ts));
 - **Analytics:** In production, [`@vercel/analytics`](https://www.npmjs.com/package/@vercel/analytics)
   may send page-view style events to Vercel ([`app/layout.tsx`](app/layout.tsx));
   this is separate from submission payloads. Survey profile data, deck content,
