@@ -19,7 +19,7 @@ The `/research` flow is a guided submission wizard that:
 1. collects a language-learning profile and optionally links it to a prior submission via a withdrawal token;
 2. parses one or more Anki `.apkg` files entirely in the browser with `sql.js` and `JSZip`;
 3. reconstructs deck, note, card, and review-log data into a normalized client model;
-4. lets the contributor review note content, remove notes, and filter tags before submission;
+4. lets the contributor review note content, remove notes, omit note-type field values, and filter tags before submission;
 5. builds a gzipped JSON payload and uploads it to Supabase Storage using a signed upload URL;
 6. supports later withdrawal of all submissions linked to the same token via `/research/withdraw`
 
@@ -120,7 +120,7 @@ collected, excluded, and transformed **after** upload but before public release)
 
 - Raw `.apkg` archives (ZIP + SQLite + media) are read only in the browser via
   [`lib/hooks/useApkgParser.ts`](lib/hooks/useApkgParser.ts).
-- Note-level include/exclude, tag filtering, and PII heuristics run locally
+- Note-level include/exclude, note-type field value removal, tag filtering, and PII heuristics run locally
   ([`lib/hooks/usePiiScanner.ts`](lib/hooks/usePiiScanner.ts)).
 - The exact JSON to be uploaded can be downloaded before submit
   ([`app/research/_components/StepDoneSubmit.tsx`](app/research/_components/StepDoneSubmit.tsx)).

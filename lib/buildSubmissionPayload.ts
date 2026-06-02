@@ -1,6 +1,7 @@
 import type {
   DeckAssignmentRecord,
   DeckReviewConfigRecord,
+  ModelKey,
   ParsedCollection,
   ParsedDeck,
   SubmissionPayload,
@@ -25,6 +26,7 @@ interface BuildSubmissionPayloadInput {
   deckAssignments: DeckAssignmentRecord;
   deckReviewConfigs: DeckReviewConfigRecord;
   excludedNoteIds: Set<number>;
+  excludedFieldsByModelKey: Record<ModelKey, Set<number>>;
 }
 
 /**
@@ -50,6 +52,15 @@ function buildRetainedTagSetForNote(
   }
 
   return retainedTags;
+}
+
+function getSortedExcludedFieldIndexes(
+  modelKey: ModelKey,
+  excludedFieldsByModelKey: Record<ModelKey, Set<number>>,
+) {
+  return [...(excludedFieldsByModelKey[modelKey] ?? new Set<number>())].sort(
+    (left, right) => left - right,
+  );
 }
 
 /**
@@ -103,13 +114,19 @@ export function buildSubmissionPayload(
   });
 
   // Deduplicating models to keep the payload to one definition per model even
-  // when the same model appears across multiple parsed files.
-  const modelMap = new Map<number, SubmissionPayload["models"][number]>();
+  // when the same source-aware model appears across multiple parsed files.
+  const modelMap = new Map<string, SubmissionPayload["models"][number]>();
   for (const model of index.models) {
-    if (!modelMap.has(model.model_id)) {
-      modelMap.set(model.model_id, {
+    if (!modelMap.has(model.model_key)) {
+      modelMap.set(model.model_key, {
+        model_key: model.payload_model_key,
+        source_file_index: model.source_file_index,
         model_id: model.model_id,
         field_names: model.field_names,
+        excluded_field_indexes: getSortedExcludedFieldIndexes(
+          model.model_key,
+          input.excludedFieldsByModelKey,
+        ),
       });
     }
   }
@@ -118,7 +135,7 @@ export function buildSubmissionPayload(
   const notes = index.notes
     .filter((note) => !input.excludedNoteIds.has(note.note_id))
     .map((note) => {
-      const noteCards = index.cardsByNoteId.get(note.note_id) ?? [];
+      const noteCards = index.cardsByNoteKey.get(note.note_key) ?? [];
       const relatedDecks = noteCards
         .map((card) => index.deckMap.get(card.deck_id))
         .filter((deck): deck is ParsedDeck => Boolean(deck));
@@ -130,10 +147,17 @@ export function buildSubmissionPayload(
 
       // Applying tag retention here (at payload build time) to keep the
       // exported note data aligned with the final per-deck privacy decisions.
+      const excludedFieldIndexes = input.excludedFieldsByModelKey[
+        note.model_key
+      ] ?? new Set<number>();
+
       return {
         note_id: note.note_id,
         model_id: note.model_id,
-        fields: note.fields,
+        model_key: note.payload_model_key,
+        fields: note.fields.map((field, fieldIndex) =>
+          excludedFieldIndexes.has(fieldIndex) ? null : field,
+        ),
         tags: note.tags.filter((tag) => retainedTags.has(tag)),
         created_at_ms: note.created_at_ms,
       };
@@ -162,10 +186,14 @@ export function buildSubmissionPayload(
 
   // Limiting review logs to cards that survived privacy review to prevent the
   // review history from outliving a removed note or card.
-  const includedCardIds = new Set(cards.map((card) => card.card_id));
+  const includedCardKeys = new Set(
+    index.cards
+      .filter((card) => !input.excludedNoteIds.has(card.note_id))
+      .map((card) => card.card_key),
+  );
 
   const reviews = index.reviews
-    .filter((review) => includedCardIds.has(review.card_id))
+    .filter((review) => includedCardKeys.has(review.card_key))
     .map((review) => ({
       card_id: review.card_id,
       timestamp_ms: review.timestamp_ms,

@@ -13,13 +13,14 @@ import type {
   DeckReviewConfigRecord,
   DeckScanResult,
   FieldPiiMatch,
-  ParsedCard,
+  IndexedParsedCard,
+  IndexedParsedModel,
+  IndexedParsedNote,
+  IndexedParsedReview,
+  ModelKey,
   ParsedCollection,
   ParsedDeck,
   ParsedFile,
-  ParsedModel,
-  ParsedNote,
-  ParsedReview,
   SpecialCategoryMatch,
   SubmissionPayload,
   UserProfile,
@@ -33,17 +34,26 @@ export interface SubmissionIndex {
   collections: ParsedCollection[];
   decks: ParsedDeck[];
   directDecks: ParsedDeck[];
-  models: ParsedModel[];
-  notes: ParsedNote[];
-  cards: ParsedCard[];
-  reviews: ParsedReview[];
+  models: IndexedParsedModel[];
+  notes: IndexedParsedNote[];
+  cards: IndexedParsedCard[];
+  reviews: IndexedParsedReview[];
   deckMap: Map<number, ParsedDeck>;
-  modelMap: Map<number, ParsedModel>;
-  noteMap: Map<number, ParsedNote>;
-  cardMap: Map<number, ParsedCard>;
-  cardsByDeckId: Map<number, ParsedCard[]>;
-  cardsByNoteId: Map<number, ParsedCard[]>;
-  reviewsByCardId: Map<number, ParsedReview[]>;
+  modelMap: Map<number, IndexedParsedModel>;
+  modelMapByKey: Map<ModelKey, IndexedParsedModel>;
+  noteMap: Map<number, IndexedParsedNote>;
+  noteMapByKey: Map<string, IndexedParsedNote>;
+  cardMap: Map<number, IndexedParsedCard>;
+  cardMapByKey: Map<string, IndexedParsedCard>;
+  cardsByDeckId: Map<number, IndexedParsedCard[]>;
+  cardsByNoteId: Map<number, IndexedParsedCard[]>;
+  cardsByNoteKey: Map<string, IndexedParsedCard[]>;
+  reviewsByCardId: Map<number, IndexedParsedReview[]>;
+  reviewsByCardKey: Map<string, IndexedParsedReview[]>;
+}
+
+interface BuildSubmissionIndexOptions {
+  includeReviews?: boolean;
 }
 
 /**
@@ -64,10 +74,10 @@ export interface DeckReviewStats {
  * and the latest review metadata shown to the participant.
  */
 export interface NoteReviewCardDetail {
-  card: ParsedCard;
+  card: IndexedParsedCard;
   deck: ParsedDeck | null;
   reviewCount: number;
-  latestReview: ParsedReview | null;
+  latestReview: IndexedParsedReview | null;
 }
 
 /**
@@ -75,18 +85,33 @@ export interface NoteReviewCardDetail {
  * note, all related cards, review activity, and any PII scan findings.
  */
 export interface NoteReviewRow {
-  note: ParsedNote;
-  model: ParsedModel | null;
-  deckCards: ParsedCard[];
-  allCards: ParsedCard[];
+  note: IndexedParsedNote;
+  model: IndexedParsedModel | null;
+  deckCards: IndexedParsedCard[];
+  allCards: IndexedParsedCard[];
   cardDetails: NoteReviewCardDetail[];
   totalReviewCount: number;
-  latestReview: ParsedReview | null;
+  latestReview: IndexedParsedReview | null;
   fieldMatches: FieldPiiMatch[];
   specialMatches: SpecialCategoryMatch[];
   specialCategories: Array<SpecialCategoryMatch["category"]>;
   isFlagged: boolean;
   isExcluded: boolean;
+}
+
+export interface ModelFieldReviewFieldRow {
+  fieldIndex: number;
+  fieldName: string;
+  isExcluded: boolean;
+}
+
+export interface ModelFieldReviewRow {
+  modelKey: ModelKey;
+  model: IndexedParsedModel;
+  fields: ModelFieldReviewFieldRow[];
+  deckNoteCount: number;
+  submissionNoteCount: number;
+  duplicateModelIdCount: number;
 }
 
 /** Returns an empty user profile shape suitable for initializing form state. */
@@ -115,6 +140,22 @@ export function normalizeUserProfile(
 /** Narrows an unknown value to one of the scheduler identifiers we support. */
 export function isSchedulerKind(value: unknown): value is SchedulerKind {
   return SCHEDULER_OPTIONS.includes(value as SchedulerKind);
+}
+
+export function buildModelKey(sourceFileId: string, modelId: number): ModelKey {
+  return `${sourceFileId}:${modelId}`;
+}
+
+function buildSourceEntityKey(sourceFileId: string, entityId: number) {
+  return `${sourceFileId}:${entityId}`;
+}
+
+function buildPayloadSourceLabel(sourceFileIndex: number) {
+  return `file_${String(sourceFileIndex + 1).padStart(3, "0")}`;
+}
+
+function buildPayloadModelKey(sourceFileIndex: number, modelId: number) {
+  return `${buildPayloadSourceLabel(sourceFileIndex)}:${modelId}`;
 }
 
 /**
@@ -191,32 +232,97 @@ export function sortDecksDepthFirst(decks: ParsedDeck[]): ParsedDeck[] {
  */
 export function buildSubmissionIndex(
   parsedFiles: ParsedFile[],
+  options: BuildSubmissionIndexOptions = {},
 ): SubmissionIndex {
+  const includeReviews = options.includeReviews ?? true;
   // Flattening parsed file contents into entity arrays to let the rest of the
   // review and submission flow index them consistently.
   const decks: ParsedDeck[] = [];
-  const models: ParsedModel[] = [];
-  const notes: ParsedNote[] = [];
-  const cards: ParsedCard[] = [];
-  const reviews: ParsedReview[] = [];
+  const models: IndexedParsedModel[] = [];
+  const notes: IndexedParsedNote[] = [];
+  const cards: IndexedParsedCard[] = [];
+  const reviews: IndexedParsedReview[] = [];
 
-  for (const parsedFile of parsedFiles) {
+  parsedFiles.forEach((parsedFile, sourceFileIndex) => {
+    const sourceFileId = parsedFile.id;
+    const sourceFilename = parsedFile.filename;
     decks.push(...parsedFile.data.decks);
-    models.push(...parsedFile.data.models);
-    notes.push(...parsedFile.data.notes);
-    cards.push(...parsedFile.data.cards);
-    reviews.push(...parsedFile.data.reviews);
-  }
+
+    models.push(
+      ...parsedFile.data.models.map((model) => {
+        const modelKey = buildModelKey(sourceFileId, model.model_id);
+        return {
+          ...model,
+          model_key: modelKey,
+          payload_model_key: buildPayloadModelKey(
+            sourceFileIndex,
+            model.model_id,
+          ),
+          source_file_id: sourceFileId,
+          source_file_index: sourceFileIndex,
+          source_filename: sourceFilename,
+        };
+      }),
+    );
+
+    notes.push(
+      ...parsedFile.data.notes.map((note) => {
+        const modelKey = buildModelKey(sourceFileId, note.model_id);
+        return {
+          ...note,
+          model_key: modelKey,
+          payload_model_key: buildPayloadModelKey(
+            sourceFileIndex,
+            note.model_id,
+          ),
+          source_file_id: sourceFileId,
+          source_file_index: sourceFileIndex,
+          source_filename: sourceFilename,
+          note_key: buildSourceEntityKey(sourceFileId, note.note_id),
+        };
+      }),
+    );
+
+    cards.push(
+      ...parsedFile.data.cards.map((card) => ({
+        ...card,
+        source_file_id: sourceFileId,
+        source_file_index: sourceFileIndex,
+        source_filename: sourceFilename,
+        card_key: buildSourceEntityKey(sourceFileId, card.card_id),
+        note_key: buildSourceEntityKey(sourceFileId, card.note_id),
+      })),
+    );
+
+    if (includeReviews) {
+      reviews.push(
+        ...parsedFile.data.reviews.map((review) => ({
+          ...review,
+          source_file_id: sourceFileId,
+          source_file_index: sourceFileIndex,
+          source_filename: sourceFilename,
+          card_key: buildSourceEntityKey(sourceFileId, review.card_id),
+        })),
+      );
+    }
+  });
 
   // Building direct ID lookups to let later code follow deck, note, card, and
   // model relationships without repeatedly scanning full arrays.
   const deckMap = new Map(decks.map((deck) => [deck.deck_id, deck]));
   const modelMap = new Map(models.map((model) => [model.model_id, model]));
+  const modelMapByKey = new Map(
+    models.map((model) => [model.model_key, model]),
+  );
   const noteMap = new Map(notes.map((note) => [note.note_id, note]));
+  const noteMapByKey = new Map(notes.map((note) => [note.note_key, note]));
   const cardMap = new Map(cards.map((card) => [card.card_id, card]));
-  const cardsByDeckId = new Map<number, ParsedCard[]>();
-  const cardsByNoteId = new Map<number, ParsedCard[]>();
-  const reviewsByCardId = new Map<number, ParsedReview[]>();
+  const cardMapByKey = new Map(cards.map((card) => [card.card_key, card]));
+  const cardsByDeckId = new Map<number, IndexedParsedCard[]>();
+  const cardsByNoteId = new Map<number, IndexedParsedCard[]>();
+  const cardsByNoteKey = new Map<string, IndexedParsedCard[]>();
+  const reviewsByCardId = new Map<number, IndexedParsedReview[]>();
+  const reviewsByCardKey = new Map<string, IndexedParsedReview[]>();
 
   // Precomputing deck and note groupings to let privacy review and payload code
   // reason about shared notes and deck-local slices cheaply.
@@ -228,6 +334,10 @@ export function buildSubmissionIndex(
     const noteCards = cardsByNoteId.get(card.note_id) ?? [];
     noteCards.push(card);
     cardsByNoteId.set(card.note_id, noteCards);
+
+    const sourceNoteCards = cardsByNoteKey.get(card.note_key) ?? [];
+    sourceNoteCards.push(card);
+    cardsByNoteKey.set(card.note_key, sourceNoteCards);
   }
 
   // Grouping reviews by card to let note-review rows and payload summaries
@@ -236,6 +346,10 @@ export function buildSubmissionIndex(
     const cardReviews = reviewsByCardId.get(review.card_id) ?? [];
     cardReviews.push(review);
     reviewsByCardId.set(review.card_id, cardReviews);
+
+    const sourceCardReviews = reviewsByCardKey.get(review.card_key) ?? [];
+    sourceCardReviews.push(review);
+    reviewsByCardKey.set(review.card_key, sourceCardReviews);
   }
 
   // Preserving deck hierarchy and tracking decks with direct cards to keep
@@ -252,11 +366,16 @@ export function buildSubmissionIndex(
     reviews,
     deckMap,
     modelMap,
+    modelMapByKey,
     noteMap,
+    noteMapByKey,
     cardMap,
+    cardMapByKey,
     cardsByDeckId,
     cardsByNoteId,
+    cardsByNoteKey,
     reviewsByCardId,
+    reviewsByCardKey,
   };
 }
 
@@ -272,7 +391,7 @@ export function buildDeckTags(
   const tags = new Set<string>();
 
   for (const card of cards) {
-    const note = index.noteMap.get(card.note_id);
+    const note = index.noteMapByKey.get(card.note_key);
     if (!note) {
       continue;
     }
@@ -328,6 +447,41 @@ export function initializeExcludedNoteIds(
   return new Set(
     [...existingExcludedNoteIds].filter((noteId) => index.noteMap.has(noteId)),
   );
+}
+
+/**
+ * Keeps only field-exclusion decisions that still reference models and field
+ * ordinals present in the current upload.
+ */
+export function initializeExcludedFieldsByModelKey(
+  parsedFiles: ParsedFile[],
+  existingExcludedFieldsByModelKey: Record<ModelKey, Set<number>> = {},
+): Record<ModelKey, Set<number>> {
+  const index = buildSubmissionIndex(parsedFiles);
+  const nextExcludedFieldsByModelKey: Record<ModelKey, Set<number>> = {};
+
+  for (const model of index.models) {
+    const existingFieldIndexes =
+      existingExcludedFieldsByModelKey[model.model_key];
+    if (!existingFieldIndexes) {
+      continue;
+    }
+
+    const availableFieldIndexes = new Set(
+      model.fields.map((field) => field.index),
+    );
+    const retainedFieldIndexes = [...existingFieldIndexes].filter(
+      (fieldIndex) => availableFieldIndexes.has(fieldIndex),
+    );
+
+    if (retainedFieldIndexes.length > 0) {
+      nextExcludedFieldsByModelKey[model.model_key] = new Set(
+        retainedFieldIndexes,
+      );
+    }
+  }
+
+  return nextExcludedFieldsByModelKey;
 }
 
 /**
@@ -407,10 +561,10 @@ function dedupeSpecialMatches(matches: SpecialCategoryMatch[]) {
  * for context without exposing the full review history inline.
  */
 function latestReviewForCard(
-  reviewsByCardId: SubmissionIndex["reviewsByCardId"],
-  cardId: number,
+  reviewsByCardKey: SubmissionIndex["reviewsByCardKey"],
+  cardKey: string,
 ) {
-  const reviews = reviewsByCardId.get(cardId) ?? [];
+  const reviews = reviewsByCardKey.get(cardKey) ?? [];
 
   if (reviews.length === 0) {
     return null;
@@ -439,6 +593,79 @@ function sortNoteReviewRows(rows: NoteReviewRow[]) {
 }
 
 /**
+ * Builds the source-aware note-type field rows shown in the field review tab.
+ */
+export function buildDeckModelFieldReviewRows(
+  index: SubmissionIndex,
+  deckId: number,
+  excludedFieldsByModelKey: Record<ModelKey, Set<number>>,
+): ModelFieldReviewRow[] {
+  const deckCards = index.cardsByDeckId.get(deckId) ?? [];
+  const deckNoteKeysByModelKey = new Map<ModelKey, Set<string>>();
+  const submissionNoteCountByModelKey = new Map<ModelKey, number>();
+  const duplicateModelIdCountByModelId = new Map<number, number>();
+
+  for (const model of index.models) {
+    duplicateModelIdCountByModelId.set(
+      model.model_id,
+      (duplicateModelIdCountByModelId.get(model.model_id) ?? 0) + 1,
+    );
+  }
+
+  for (const note of index.notes) {
+    submissionNoteCountByModelKey.set(
+      note.model_key,
+      (submissionNoteCountByModelKey.get(note.model_key) ?? 0) + 1,
+    );
+  }
+
+  for (const card of deckCards) {
+    const note = index.noteMapByKey.get(card.note_key);
+    if (!note) {
+      continue;
+    }
+
+    const deckNoteKeys =
+      deckNoteKeysByModelKey.get(note.model_key) ?? new Set<string>();
+    deckNoteKeys.add(note.note_key);
+    deckNoteKeysByModelKey.set(note.model_key, deckNoteKeys);
+  }
+
+  return [...deckNoteKeysByModelKey.entries()]
+    .map(([modelKey, deckNoteKeys]) => {
+      const model = index.modelMapByKey.get(modelKey);
+      if (!model || model.fields.length === 0) {
+        return null;
+      }
+
+      const excludedFieldIndexes =
+        excludedFieldsByModelKey[modelKey] ?? new Set<number>();
+
+      return {
+        modelKey,
+        model,
+        fields: model.fields.map((field) => ({
+          fieldIndex: field.index,
+          fieldName: field.name,
+          isExcluded: excludedFieldIndexes.has(field.index),
+        })),
+        deckNoteCount: deckNoteKeys.size,
+        submissionNoteCount: submissionNoteCountByModelKey.get(modelKey) ?? 0,
+        duplicateModelIdCount:
+          duplicateModelIdCountByModelId.get(model.model_id) ?? 1,
+      };
+    })
+    .filter((row): row is ModelFieldReviewRow => row !== null)
+    .sort((left, right) => {
+      if (left.model.model_id !== right.model.model_id) {
+        return left.model.model_id - right.model.model_id;
+      }
+
+      return left.model.source_file_index - right.model.source_file_index;
+    });
+}
+
+/**
  * Builds the note-centered rows shown in deck privacy review, combining cards,
  * reviews, scan findings, and exclusion state into one inspectable structure.
  */
@@ -451,26 +678,26 @@ export function buildDeckNoteReviewRows(
   // Grouping cards from the active deck by note to reflect that privacy
   // decisions are made at the note level, not per individual card.
   const deckCards = index.cardsByDeckId.get(deckId) ?? [];
-  const cardsByNoteId = new Map<number, ParsedCard[]>();
+  const cardsByNoteKey = new Map<string, IndexedParsedCard[]>();
 
   for (const card of deckCards) {
-    const noteCards = cardsByNoteId.get(card.note_id) ?? [];
+    const noteCards = cardsByNoteKey.get(card.note_key) ?? [];
     noteCards.push(card);
-    cardsByNoteId.set(card.note_id, noteCards);
+    cardsByNoteKey.set(card.note_key, noteCards);
   }
 
   const rows: NoteReviewRow[] = [];
 
   // Assembling one review row per note to let the UI show shared cards,
   // findings, and exclusion status in a single place.
-  for (const [noteId, noteDeckCards] of cardsByNoteId.entries()) {
-    const note = index.noteMap.get(noteId);
+  for (const [noteKey, noteDeckCards] of cardsByNoteKey.entries()) {
+    const note = index.noteMapByKey.get(noteKey);
     if (!note) {
       continue;
     }
 
-    const allCards = index.cardsByNoteId.get(noteId) ?? noteDeckCards;
-    const model = index.modelMap.get(note.model_id) ?? null;
+    const allCards = index.cardsByNoteKey.get(noteKey) ?? noteDeckCards;
+    const model = index.modelMapByKey.get(note.model_key) ?? null;
 
     // Aggregating scan findings at the note level to reflect that excluding a
     // note removes every card derived from it from the final submission payload.
@@ -514,14 +741,14 @@ export function buildDeckNoteReviewRows(
         return left.card_id - right.card_id;
       })
       .map((card) => {
-        const reviews = index.reviewsByCardId.get(card.card_id) ?? [];
+        const reviews = index.reviewsByCardKey.get(card.card_key) ?? [];
         return {
           card,
           deck: index.deckMap.get(card.deck_id) ?? null,
           reviewCount: reviews.length,
           latestReview: latestReviewForCard(
-            index.reviewsByCardId,
-            card.card_id,
+            index.reviewsByCardKey,
+            card.card_key,
           ),
         };
       });
@@ -529,7 +756,7 @@ export function buildDeckNoteReviewRows(
     // Summarizing all related reviews here to keep the row aligned with what
     // would be included if this note remains part of the final submission.
     const allReviews = cardDetails.flatMap(
-      (detail) => index.reviewsByCardId.get(detail.card.card_id) ?? [],
+      (detail) => index.reviewsByCardKey.get(detail.card.card_key) ?? [],
     );
     const latestReview =
       allReviews.length > 0
@@ -552,7 +779,7 @@ export function buildDeckNoteReviewRows(
         new Set(specialMatches.map((match) => match.category)),
       ),
       isFlagged: fieldMatches.length > 0 || specialMatches.length > 0,
-      isExcluded: excludedNoteIds.has(noteId),
+      isExcluded: excludedNoteIds.has(note.note_id),
     });
   }
 
@@ -612,7 +839,7 @@ export function computeSubmissionStats(
   const includedCards = index.cards.filter(
     (card) => !excludedNoteIds.has(card.note_id),
   );
-  const includedCardIds = new Set(includedCards.map((card) => card.card_id));
+  const includedCardKeys = new Set(includedCards.map((card) => card.card_key));
   const includedNotes = index.notes.filter(
     (note) => !excludedNoteIds.has(note.note_id),
   );
@@ -620,7 +847,7 @@ export function computeSubmissionStats(
   // Including reviews only when their parent card survived note exclusion to
   // keep the summary within the same privacy boundary as the final payload.
   const includedReviews = index.reviews.filter((review) =>
-    includedCardIds.has(review.card_id),
+    includedCardKeys.has(review.card_key),
   );
 
   return {

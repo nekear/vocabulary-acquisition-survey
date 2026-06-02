@@ -159,6 +159,9 @@ export function StepDoneSubmit() {
   const excludedNoteIds = useSubmissionStore(
     (state) => state.draft.excludedNoteIds,
   );
+  const excludedFieldsByModelKey = useSubmissionStore(
+    (state) => state.draft.excludedFieldsByModelKey,
+  );
   const consent = useSubmissionStore((state) => state.draft.consent);
   const pendingConfirmation = useSubmissionStore(
     (state) => state.draft.pendingConfirmation,
@@ -188,6 +191,7 @@ export function StepDoneSubmit() {
       deckAssignments,
       deckReviewConfigs,
       excludedNoteIds,
+      excludedFieldsByModelKey,
     });
 
   const buildPayloadJson = () =>

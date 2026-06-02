@@ -26,8 +26,16 @@ export interface ParsedDeck {
   sort_index: number;
 }
 
+export type ModelKey = string;
+
+export interface ParsedModelField {
+  index: number;
+  name: string;
+}
+
 export interface ParsedModel {
   model_id: number;
+  fields: ParsedModelField[];
   field_names: string[];
 }
 
@@ -79,6 +87,38 @@ export interface ParsedCollection {
   reviews: ParsedReview[];
 }
 
+export interface IndexedParsedModel extends ParsedModel {
+  model_key: ModelKey;
+  payload_model_key: string;
+  source_file_id: string;
+  source_file_index: number;
+  source_filename: string;
+}
+
+export interface IndexedParsedNote extends ParsedNote {
+  model_key: ModelKey;
+  payload_model_key: string;
+  source_file_id: string;
+  source_file_index: number;
+  source_filename: string;
+  note_key: string;
+}
+
+export interface IndexedParsedCard extends ParsedCard {
+  source_file_id: string;
+  source_file_index: number;
+  source_filename: string;
+  card_key: string;
+  note_key: string;
+}
+
+export interface IndexedParsedReview extends ParsedReview {
+  source_file_id: string;
+  source_file_index: number;
+  source_filename: string;
+  card_key: string;
+}
+
 export interface ParsedFile {
   id: string;
   filename: string;
@@ -109,14 +149,18 @@ export interface SubmissionDeck {
 }
 
 export interface SubmissionModel {
+  model_key: string;
+  source_file_index: number;
   model_id: number;
   field_names: string[];
+  excluded_field_indexes: number[];
 }
 
 export interface SubmissionNote {
   note_id: number;
   model_id: number;
-  fields: string[];
+  model_key: string;
+  fields: Array<string | null>;
   tags: string[];
   created_at_ms: number;
 }
@@ -192,6 +236,7 @@ export interface SubmissionDraft {
   deckAssignments: DeckAssignmentRecord;
   deckReviewConfigs: DeckReviewConfigRecord;
   excludedNoteIds: Set<number>;
+  excludedFieldsByModelKey: Record<ModelKey, Set<number>>;
   consent: {
     publish_revlogs: boolean;
     publish_userinfo: boolean;

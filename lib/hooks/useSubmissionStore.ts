@@ -9,12 +9,14 @@ import {
   emptyUserProfile,
   initializeDeckAssignments,
   initializeDeckReviewConfigs,
+  initializeExcludedFieldsByModelKey,
   initializeExcludedNoteIds,
   normalizeUserProfile,
 } from "@/lib/research";
 import type {
   DeckAssignmentRecord,
   DeckReviewConfigRecord,
+  ModelKey,
   ParsedFile,
   StepNumber,
   SubmissionConfirmation,
@@ -60,6 +62,11 @@ interface SubmissionStoreState {
   clearParsedFiles: () => void;
   setDeckAssignments: (assignments: DeckAssignmentRecord) => void;
   setNoteIncluded: (noteId: number, included: boolean) => void;
+  setModelFieldIncluded: (
+    modelKey: ModelKey,
+    fieldIndex: number,
+    included: boolean,
+  ) => void;
   setDeckTagRetained: (deckId: number, tag: string, retained: boolean) => void;
   setConsent: (partial: Partial<SubmissionDraft["consent"]>) => void;
   setPendingConfirmation: (
@@ -83,6 +90,7 @@ function createDraft(): SubmissionDraft {
     deckAssignments: {},
     deckReviewConfigs: {},
     excludedNoteIds: new Set<number>(),
+    excludedFieldsByModelKey: {},
     consent: {
       publish_revlogs: false,
       publish_userinfo: false,
@@ -185,6 +193,10 @@ export const useSubmissionStore = create<SubmissionStoreState>()(
               parsedFiles,
               state.draft.excludedNoteIds,
             ),
+            excludedFieldsByModelKey: initializeExcludedFieldsByModelKey(
+              parsedFiles,
+              state.draft.excludedFieldsByModelKey,
+            ),
           },
         })),
       removeParsedFile: (fileId) =>
@@ -208,6 +220,10 @@ export const useSubmissionStore = create<SubmissionStoreState>()(
                 parsedFiles,
                 state.draft.excludedNoteIds,
               ),
+              excludedFieldsByModelKey: initializeExcludedFieldsByModelKey(
+                parsedFiles,
+                state.draft.excludedFieldsByModelKey,
+              ),
             },
           };
         }),
@@ -219,6 +235,7 @@ export const useSubmissionStore = create<SubmissionStoreState>()(
             deckAssignments: {},
             deckReviewConfigs: {},
             excludedNoteIds: new Set<number>(),
+            excludedFieldsByModelKey: {},
           },
         })),
       setDeckAssignments: (assignments) =>
@@ -242,6 +259,35 @@ export const useSubmissionStore = create<SubmissionStoreState>()(
             draft: {
               ...state.draft,
               excludedNoteIds,
+            },
+          };
+        }),
+      setModelFieldIncluded: (modelKey, fieldIndex, included) =>
+        set((state) => {
+          const excludedFieldIndexes = new Set(
+            state.draft.excludedFieldsByModelKey[modelKey] ?? [],
+          );
+
+          if (included) {
+            excludedFieldIndexes.delete(fieldIndex);
+          } else {
+            excludedFieldIndexes.add(fieldIndex);
+          }
+
+          const excludedFieldsByModelKey = {
+            ...state.draft.excludedFieldsByModelKey,
+          };
+
+          if (excludedFieldIndexes.size === 0) {
+            delete excludedFieldsByModelKey[modelKey];
+          } else {
+            excludedFieldsByModelKey[modelKey] = excludedFieldIndexes;
+          }
+
+          return {
+            draft: {
+              ...state.draft,
+              excludedFieldsByModelKey,
             },
           };
         }),
