@@ -92,8 +92,15 @@ export function Step3DeckConfiguration() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [shortcutsSeen, setShortcutsSeen] = useState(false);
   const [activeDeckId, setActiveDeckId] = useState<number | null>(null);
-  const index = useMemo(() => buildSubmissionIndex(parsedFiles), [parsedFiles]);
-  const { scans } = usePiiScanner(parsedFiles);
+  const index = useMemo(
+    () => buildSubmissionIndex(parsedFiles, { includeReviews: false }),
+    [parsedFiles],
+  );
+  const activeDetailIndex = useMemo(
+    () => (activeDeckId ? buildSubmissionIndex(parsedFiles) : null),
+    [activeDeckId, parsedFiles],
+  );
+  const { deckScan } = usePiiScanner(parsedFiles, activeDeckId);
   const activeDeck = activeDeckId
     ? (index.deckMap.get(activeDeckId) ?? null)
     : null;
@@ -536,13 +543,13 @@ export function Step3DeckConfiguration() {
           }
         }}
         noteReviewContent={
-          activeDeck ? (
+          activeDeck && activeDetailIndex ? (
             <NoteReviewTable
               deckId={activeDeck.deck_id}
               deckName={activeDeck.name}
-              index={index}
+              index={activeDetailIndex}
               excludedNoteIds={excludedNoteIds}
-              deckScan={scans[activeDeck.deck_id]}
+              deckScan={deckScan}
               onSetNoteIncluded={setNoteIncluded}
             />
           ) : null

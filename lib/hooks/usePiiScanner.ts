@@ -845,19 +845,27 @@ function buildDeckScan(
   };
 }
 
-export function usePiiScanner(parsedFiles: ParsedFile[]) {
+export function usePiiScanner(
+  parsedFiles: ParsedFile[],
+  activeDeckId: number | null,
+) {
   return useMemo(() => {
-    const scans: Record<number, DeckScanResult> = {};
-
-    for (const parsedFile of parsedFiles) {
-      for (const deck of parsedFile.data.decks) {
-        scans[deck.deck_id] = buildDeckScan(parsedFile.data, deck.deck_id);
-      }
+    if (activeDeckId === null) {
+      return {
+        deckScan: undefined as DeckScanResult | undefined,
+        stripHtml,
+      };
     }
 
+    const parsedFile = parsedFiles.find((file) =>
+      file.data.decks.some((deck) => deck.deck_id === activeDeckId),
+    );
+
     return {
-      scans,
+      deckScan: parsedFile
+        ? buildDeckScan(parsedFile.data, activeDeckId)
+        : undefined,
       stripHtml,
     };
-  }, [parsedFiles]);
+  }, [activeDeckId, parsedFiles]);
 }

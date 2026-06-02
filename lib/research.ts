@@ -52,6 +52,10 @@ export interface SubmissionIndex {
   reviewsByCardKey: Map<string, IndexedParsedReview[]>;
 }
 
+interface BuildSubmissionIndexOptions {
+  includeReviews?: boolean;
+}
+
 /**
  * Summarizes how many notes and cards in one deck remain included after the
  * participant's privacy review decisions have been applied.
@@ -228,7 +232,9 @@ export function sortDecksDepthFirst(decks: ParsedDeck[]): ParsedDeck[] {
  */
 export function buildSubmissionIndex(
   parsedFiles: ParsedFile[],
+  options: BuildSubmissionIndexOptions = {},
 ): SubmissionIndex {
+  const includeReviews = options.includeReviews ?? true;
   // Flattening parsed file contents into entity arrays to let the rest of the
   // review and submission flow index them consistently.
   const decks: ParsedDeck[] = [];
@@ -288,15 +294,17 @@ export function buildSubmissionIndex(
       })),
     );
 
-    reviews.push(
-      ...parsedFile.data.reviews.map((review) => ({
-        ...review,
-        source_file_id: sourceFileId,
-        source_file_index: sourceFileIndex,
-        source_filename: sourceFilename,
-        card_key: buildSourceEntityKey(sourceFileId, review.card_id),
-      })),
-    );
+    if (includeReviews) {
+      reviews.push(
+        ...parsedFile.data.reviews.map((review) => ({
+          ...review,
+          source_file_id: sourceFileId,
+          source_file_index: sourceFileIndex,
+          source_filename: sourceFilename,
+          card_key: buildSourceEntityKey(sourceFileId, review.card_id),
+        })),
+      );
+    }
   });
 
   // Building direct ID lookups to let later code follow deck, note, card, and
