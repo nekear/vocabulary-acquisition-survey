@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -44,10 +44,18 @@ import {
   buildDeckTags,
   buildSubmissionIndex,
   computeDeckReviewStats,
+  type SubmissionIndex,
 } from "@/lib/research";
-import type { DeckAssignment, DeckAssignmentRecord } from "@/lib/types";
-import { usePiiScanner } from "@/lib/hooks/usePiiScanner";
+import type {
+  DeckAssignment,
+  DeckAssignmentRecord,
+  DeckScanResult,
+  ParsedFile,
+} from "@/lib/types";
+import { buildDeckPiiScanAsync } from "@/lib/hooks/usePiiScanner";
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
+import { InlineSpinner } from "./InlineSpinner";
 
 const UNSPECIFIED_LANGUAGE_LABEL = "Unspecified";
 const OPTIONAL_SHORTCUTS_PULSE_DECK_THRESHOLD = 3;
@@ -92,15 +100,27 @@ export function Step3DeckConfiguration() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [shortcutsSeen, setShortcutsSeen] = useState(false);
   const [activeDeckId, setActiveDeckId] = useState<number | null>(null);
+  const [pendingPrivacyDeckId, setPendingPrivacyDeckId] = useState<
+    number | null
+  >(null);
+  const [activeDetailIndex, setActiveDetailIndex] =
+    useState<SubmissionIndex | null>(null);
+  const [activeDeckScan, setActiveDeckScan] = useState<
+    DeckScanResult | undefined
+  >(undefined);
+  const detailIndexCacheRef = useRef<{
+    parsedFiles: ParsedFile[];
+    index: SubmissionIndex;
+  } | null>(null);
+  const deckScanCacheRef = useRef<{
+    parsedFiles: ParsedFile[];
+    scans: Map<number, DeckScanResult | undefined>;
+  } | null>(null);
+  const isPreparingPrivacyRef = useRef(false);
   const index = useMemo(
     () => buildSubmissionIndex(parsedFiles, { includeReviews: false }),
     [parsedFiles],
   );
-  const activeDetailIndex = useMemo(
-    () => (activeDeckId ? buildSubmissionIndex(parsedFiles) : null),
-    [activeDeckId, parsedFiles],
-  );
-  const { deckScan } = usePiiScanner(parsedFiles, activeDeckId);
   const activeDeck = activeDeckId
     ? (index.deckMap.get(activeDeckId) ?? null)
     : null;
@@ -125,6 +145,123 @@ export function Step3DeckConfiguration() {
     setBulkLanguage("");
     setBulkScheduler("");
   }, [defaultAssignments]);
+
+  useEffect(() => {
+    detailIndexCacheRef.current = null;
+    deckScanCacheRef.current = {
+      parsedFiles,
+      scans: new Map<number, DeckScanResult | undefined>(),
+    };
+    setActiveDeckId(null);
+    setActiveDetailIndex(null);
+    setActiveDeckScan(undefined);
+    setPendingPrivacyDeckId(null);
+    isPreparingPrivacyRef.current = false;
+  }, [parsedFiles]);
+
+  useEffect(() => {
+    if (pendingPrivacyDeckId === null) {
+      return;
+    }
+
+    let cancelled = false;
+    const abortController = new AbortController();
+    let timeoutId: number | null = null;
+
+    const frameId = window.requestAnimationFrame(() => {
+      timeoutId = window.setTimeout(() => {
+        void (async () => {
+          const cachedDetailIndex =
+            detailIndexCacheRef.current?.parsedFiles === parsedFiles
+              ? detailIndexCacheRef.current.index
+              : null;
+          const detailIndex =
+            cachedDetailIndex ?? buildSubmissionIndex(parsedFiles);
+
+          if (!cachedDetailIndex) {
+            detailIndexCacheRef.current = {
+              parsedFiles,
+              index: detailIndex,
+            };
+          }
+
+          let deckScanCache =
+            deckScanCacheRef.current?.parsedFiles === parsedFiles
+              ? deckScanCacheRef.current
+              : null;
+
+          if (!deckScanCache) {
+            deckScanCache = {
+              parsedFiles,
+              scans: new Map<number, DeckScanResult | undefined>(),
+            };
+            deckScanCacheRef.current = deckScanCache;
+          }
+
+          if (!deckScanCache.scans.has(pendingPrivacyDeckId)) {
+            deckScanCache.scans.set(
+              pendingPrivacyDeckId,
+              await buildDeckPiiScanAsync(parsedFiles, pendingPrivacyDeckId, {
+                signal: abortController.signal,
+              }),
+            );
+          }
+
+          if (cancelled) {
+            return;
+          }
+
+          setActiveDetailIndex(detailIndex);
+          setActiveDeckScan(deckScanCache.scans.get(pendingPrivacyDeckId));
+          setActiveDeckId(pendingPrivacyDeckId);
+          setPendingPrivacyDeckId(null);
+          isPreparingPrivacyRef.current = false;
+        })().catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            return;
+          }
+
+          setPendingPrivacyDeckId(null);
+          isPreparingPrivacyRef.current = false;
+          console.error("Privacy review preparation failed.", error);
+        });
+      }, 0);
+    });
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+      window.cancelAnimationFrame(frameId);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [pendingPrivacyDeckId, parsedFiles]);
+
+  const preparePrivacyConfiguration = (deckId: number) => {
+    if (isPreparingPrivacyRef.current) {
+      return;
+    }
+
+    const cachedDetailIndex =
+      detailIndexCacheRef.current?.parsedFiles === parsedFiles
+        ? detailIndexCacheRef.current.index
+        : null;
+    const deckScanCache =
+      deckScanCacheRef.current?.parsedFiles === parsedFiles
+        ? deckScanCacheRef.current
+        : null;
+
+    if (cachedDetailIndex && deckScanCache?.scans.has(deckId)) {
+      setActiveDetailIndex(cachedDetailIndex);
+      setActiveDeckScan(deckScanCache.scans.get(deckId));
+      setActiveDeckId(deckId);
+      return;
+    }
+
+    isPreparingPrivacyRef.current = true;
+    setPendingPrivacyDeckId(deckId);
+  };
 
   const setDeckLanguage = (deckId: number, value: LanguageCode | null) => {
     setAssignments((currentAssignments) => {
@@ -409,6 +546,8 @@ export function Step3DeckConfiguration() {
                 deck.deck_id,
               );
               const assignment = assignments[String(deck.deck_id)];
+              const isPreparingPrivacy = pendingPrivacyDeckId !== null;
+              const isPreparingThisDeck = pendingPrivacyDeckId === deck.deck_id;
 
               return (
                 <li
@@ -505,11 +644,19 @@ export function Step3DeckConfiguration() {
                     <Button
                       type="button"
                       variant="outline"
-                      className="w-full sm:w-auto"
-                      onClick={() => setActiveDeckId(deck.deck_id)}
+                      className="w-full sm:min-w-48 sm:w-auto"
+                      onClick={() => preparePrivacyConfiguration(deck.deck_id)}
+                      disabled={isPreparingPrivacy}
+                      aria-busy={isPreparingThisDeck}
                     >
-                      <SlidersHorizontal className="mr-2 h-4 w-4" />
-                      Configure privacy
+                      {isPreparingThisDeck ? (
+                        <InlineSpinner label="Scanning..." name="scan" />
+                      ) : (
+                        <>
+                          <SlidersHorizontal className="mr-2 h-4 w-4" />
+                          Configure privacy
+                        </>
+                      )}
                     </Button>
                   </div>
                 </li>
@@ -540,6 +687,8 @@ export function Step3DeckConfiguration() {
         onOpenChange={(open) => {
           if (!open) {
             setActiveDeckId(null);
+            setActiveDetailIndex(null);
+            setActiveDeckScan(undefined);
           }
         }}
         noteReviewContent={
@@ -549,7 +698,7 @@ export function Step3DeckConfiguration() {
               deckName={activeDeck.name}
               index={activeDetailIndex}
               excludedNoteIds={excludedNoteIds}
-              deckScan={deckScan}
+              deckScan={activeDeckScan}
               onSetNoteIncluded={setNoteIncluded}
             />
           ) : null

@@ -845,6 +845,87 @@ function buildDeckScan(
   };
 }
 
+function createEmptyDeckScan(deckId: number): DeckScanResult {
+  return {
+    deckId,
+    cardResults: {},
+    flaggedCardIds: new Set<number>(),
+    specialCategoryCardIds: new Set<number>(),
+  };
+}
+
+function addCardScanResult(
+  scan: DeckScanResult,
+  cardResult: CardScanResult,
+) {
+  scan.cardResults[cardResult.cardId] = cardResult;
+
+  if (cardResult.matches.length > 0) {
+    scan.flaggedCardIds.add(cardResult.cardId);
+  }
+  if (cardResult.specialMatches.length > 0) {
+    scan.flaggedCardIds.add(cardResult.cardId);
+    scan.specialCategoryCardIds.add(cardResult.cardId);
+  }
+}
+
+export function buildDeckPiiScan(
+  parsedFiles: ParsedFile[],
+  deckId: number,
+): DeckScanResult | undefined {
+  const parsedFile = parsedFiles.find((file) =>
+    file.data.decks.some((deck) => deck.deck_id === deckId),
+  );
+
+  return parsedFile ? buildDeckScan(parsedFile.data, deckId) : undefined;
+}
+
+function yieldToBrowser() {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
+export async function buildDeckPiiScanAsync(
+  parsedFiles: ParsedFile[],
+  deckId: number,
+  options: {
+    signal?: AbortSignal;
+    chunkSize?: number;
+  } = {},
+): Promise<DeckScanResult | undefined> {
+  const parsedFile = parsedFiles.find((file) =>
+    file.data.decks.some((deck) => deck.deck_id === deckId),
+  );
+  if (!parsedFile) {
+    return undefined;
+  }
+
+  const chunkSize = options.chunkSize ?? 80;
+  const collection = parsedFile.data;
+  const noteMap = new Map(collection.notes.map((note) => [note.note_id, note]));
+  const deckCards = collection.cards.filter((card) => card.deck_id === deckId);
+  const scan = createEmptyDeckScan(deckId);
+
+  for (let index = 0; index < deckCards.length; index += 1) {
+    if (options.signal?.aborted) {
+      throw new DOMException("Privacy scan was cancelled.", "AbortError");
+    }
+
+    const card = deckCards[index];
+    const note = noteMap.get(card.note_id);
+    if (note) {
+      addCardScanResult(scan, buildCardScan(card, note));
+    }
+
+    if ((index + 1) % chunkSize === 0) {
+      await yieldToBrowser();
+    }
+  }
+
+  return scan;
+}
+
 export function usePiiScanner(
   parsedFiles: ParsedFile[],
   activeDeckId: number | null,
@@ -857,14 +938,8 @@ export function usePiiScanner(
       };
     }
 
-    const parsedFile = parsedFiles.find((file) =>
-      file.data.decks.some((deck) => deck.deck_id === activeDeckId),
-    );
-
     return {
-      deckScan: parsedFile
-        ? buildDeckScan(parsedFile.data, activeDeckId)
-        : undefined,
+      deckScan: buildDeckPiiScan(parsedFiles, activeDeckId),
       stripHtml,
     };
   }, [activeDeckId, parsedFiles]);
