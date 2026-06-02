@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { DeckConfigDrawer } from "@/app/research/_components/DeckConfigDrawer";
+import { FieldsReviewTable } from "@/app/research/_components/FieldsReviewTable";
 import { NoteReviewTable } from "@/app/research/_components/NoteReviewTable";
 import { QuestionCard } from "@/app/research/_components/QuestionCard";
 import { TagsTable } from "@/app/research/_components/TagsTable";
@@ -70,10 +71,16 @@ export function Step3DeckConfiguration() {
   const excludedNoteIds = useSubmissionStore(
     (state) => state.draft.excludedNoteIds,
   );
+  const excludedFieldsByModelKey = useSubmissionStore(
+    (state) => state.draft.excludedFieldsByModelKey,
+  );
   const setDeckAssignments = useSubmissionStore(
     (state) => state.setDeckAssignments,
   );
   const setNoteIncluded = useSubmissionStore((state) => state.setNoteIncluded);
+  const setModelFieldIncluded = useSubmissionStore(
+    (state) => state.setModelFieldIncluded,
+  );
   const setDeckTagRetained = useSubmissionStore(
     (state) => state.setDeckTagRetained,
   );
@@ -537,6 +544,16 @@ export function Step3DeckConfiguration() {
               excludedNoteIds={excludedNoteIds}
               deckScan={scans[activeDeck.deck_id]}
               onSetNoteIncluded={setNoteIncluded}
+            />
+          ) : null
+        }
+        fieldsContent={
+          activeDeck ? (
+            <FieldsReviewTable
+              deckId={activeDeck.deck_id}
+              index={index}
+              excludedFieldsByModelKey={excludedFieldsByModelKey}
+              onSetModelFieldIncluded={setModelFieldIncluded}
             />
           ) : null
         }

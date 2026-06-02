@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = "1.5";
+export const SCHEMA_VERSION = "1.6";
 export const SUBMISSION_MAX_BYTES = 49_000_000;
 export const TOKEN_MIN_LENGTH = 32;
 export const TOKEN_MAX_LENGTH = 64;

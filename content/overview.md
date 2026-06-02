@@ -236,7 +236,9 @@ Every timestamp in a single user's submission is offset by the same random const
 
 - Applies to: `col.decks` → `name`
 
-**Card content - passes through your review before submission.** Before any data leaves your machine, you see a note-by-note preview of `notes.flds` content with an include/exclude toggle for each note. In Anki, one note can generate one or more cards, so excluding a note removes every card generated from that note from the submission <u>entirely</u>, along with their review history and scheduling state. This is in-the-loop consent, not post-hoc redaction. Your excluded data is NOT included in the submission in any form.
+**Card content - passes through your review before submission.** Before any data leaves your machine, you see a note-by-note preview of `notes.flds` content with an include/exclude toggle for each note. In Anki, one note can generate one or more cards, so excluding a note removes every card generated from that note from the submission <u>entirely</u>, along with their review history and scheduling state. This is in-the-loop consent, not post-hoc redaction. Your excluded note data is NOT included in the submission in any form.
+
+You can also remove selected fields for a whole note type. In that case, the submitted payload keeps the field name and field position so the research can account for what kind of cue was present, but the field value is replaced with `null` for every included note using that note type. Field removal does not remove the note, cards, or review logs.
 
 - Applies to: `notes.flds`, `notes.sfld`
 

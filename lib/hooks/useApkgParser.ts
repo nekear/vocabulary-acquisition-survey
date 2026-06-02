@@ -8,6 +8,7 @@ import type {
   ParsedCard,
   ParsedCollection,
   ParsedDeck,
+  ParsedModelField,
   ParsedModel,
   ParsedNote,
   ParsedReview,
@@ -140,6 +141,23 @@ function parseCollectionSchedulerVersion(conf: Record<string, unknown>) {
   return null;
 }
 
+function parseModelFields(
+  fields: Array<{ name?: unknown; ord?: unknown }> | undefined,
+): ParsedModelField[] {
+  return (fields ?? [])
+    .map((field, fallbackIndex) => ({
+      index:
+        typeof field.ord === "number" && Number.isInteger(field.ord)
+          ? field.ord
+          : fallbackIndex,
+      name:
+        typeof field.name === "string" && field.name.length > 0
+          ? field.name
+          : `Field ${fallbackIndex + 1}`,
+    }))
+    .sort((left, right) => left.index - right.index);
+}
+
 /**
  * Parses an uploaded `.apkg` archive entirely in the browser and returns the
  * normalized collection data used by the rest of the submission flow.
@@ -201,7 +219,7 @@ export function useApkgParser() {
       const confData = JSON.parse(confJson || "{}") as Record<string, unknown>;
       const modelsData = JSON.parse(modelsJson || "{}") as Record<
         string,
-        { flds?: Array<{ name: string }> }
+        { flds?: Array<{ name?: unknown; ord?: unknown }> }
       >;
       const decksData = JSON.parse(decksJson || "{}") as Record<
         string,
@@ -215,10 +233,15 @@ export function useApkgParser() {
       // Turning model metadata into a lightweight shape early so later code can
       // reason about notes and fields without carrying raw Anki JSON around.
       const models: ParsedModel[] = Object.entries(modelsData).map(
-        ([modelId, model]) => ({
-          model_id: Number(modelId),
-          field_names: (model.flds ?? []).map((field) => field.name),
-        }),
+        ([modelId, model]) => {
+          const fields = parseModelFields(model.flds);
+
+          return {
+            model_id: Number(modelId),
+            fields,
+            field_names: fields.map((field) => field.name),
+          };
+        },
       );
 
       // Rebuilding deck hierarchy and configuration next so cards and notes can

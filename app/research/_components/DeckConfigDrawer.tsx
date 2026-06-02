@@ -24,6 +24,7 @@ interface DeckConfigDrawerProps {
   reviewStats: DeckReviewStats | null;
   onOpenChange: (open: boolean) => void;
   noteReviewContent: ReactNode;
+  fieldsContent: ReactNode;
   tagsContent: ReactNode;
 }
 
@@ -35,6 +36,7 @@ function DrawerBody({
   onClose,
   closeLabel,
   noteReviewContent,
+  fieldsContent,
   tagsContent,
 }: {
   deck: ParsedDeck;
@@ -44,6 +46,7 @@ function DrawerBody({
   onClose: () => void;
   closeLabel: ReactNode;
   noteReviewContent: ReactNode;
+  fieldsContent: ReactNode;
   tagsContent: ReactNode;
 }) {
   return (
@@ -97,9 +100,25 @@ function DrawerBody({
       </div>
 
       <div className="shrink-0 border-b bg-background px-5 py-3">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="notes">Note-by-note review</TabsTrigger>
-          <TabsTrigger value="tags">Tags review</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-3">
+          <TabsTrigger
+            value="notes"
+            className="h-auto whitespace-normal py-2 text-center text-xs sm:text-sm"
+          >
+            Note-by-note review
+          </TabsTrigger>
+          <TabsTrigger
+            value="fields"
+            className="h-auto whitespace-normal py-2 text-center text-xs sm:text-sm"
+          >
+            Fields review
+          </TabsTrigger>
+          <TabsTrigger
+            value="tags"
+            className="h-auto whitespace-normal py-2 text-center text-xs sm:text-sm"
+          >
+            Tags review
+          </TabsTrigger>
         </TabsList>
       </div>
 
@@ -108,6 +127,12 @@ function DrawerBody({
         className="mt-0 min-h-0 flex-1 overflow-y-auto px-5 py-5"
       >
         {noteReviewContent}
+      </TabsContent>
+      <TabsContent
+        value="fields"
+        className="mt-0 min-h-0 flex-1 overflow-y-auto px-5 py-5"
+      >
+        {fieldsContent}
       </TabsContent>
       <TabsContent
         value="tags"
@@ -127,6 +152,7 @@ export function DeckConfigDrawer({
   reviewStats,
   onOpenChange,
   noteReviewContent,
+  fieldsContent,
   tagsContent,
 }: DeckConfigDrawerProps) {
   if (!deck) {
@@ -158,6 +184,7 @@ export function DeckConfigDrawer({
             </>
           }
           noteReviewContent={noteReviewContent}
+          fieldsContent={fieldsContent}
           tagsContent={tagsContent}
         />
       </DialogContent>
