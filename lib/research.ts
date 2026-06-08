@@ -246,64 +246,60 @@ export function buildSubmissionIndex(
   parsedFiles.forEach((parsedFile, sourceFileIndex) => {
     const sourceFileId = parsedFile.id;
     const sourceFilename = parsedFile.filename;
-    decks.push(...parsedFile.data.decks);
 
-    models.push(
-      ...parsedFile.data.models.map((model) => {
-        const modelKey = buildModelKey(sourceFileId, model.model_id);
-        return {
-          ...model,
-          model_key: modelKey,
-          payload_model_key: buildPayloadModelKey(
-            sourceFileIndex,
-            model.model_id,
-          ),
-          source_file_id: sourceFileId,
-          source_file_index: sourceFileIndex,
-          source_filename: sourceFilename,
-        };
-      }),
-    );
+    for (const deck of parsedFile.data.decks) {
+      decks.push(deck);
+    }
 
-    notes.push(
-      ...parsedFile.data.notes.map((note) => {
-        const modelKey = buildModelKey(sourceFileId, note.model_id);
-        return {
-          ...note,
-          model_key: modelKey,
-          payload_model_key: buildPayloadModelKey(
-            sourceFileIndex,
-            note.model_id,
-          ),
-          source_file_id: sourceFileId,
-          source_file_index: sourceFileIndex,
-          source_filename: sourceFilename,
-          note_key: buildSourceEntityKey(sourceFileId, note.note_id),
-        };
-      }),
-    );
+    for (const model of parsedFile.data.models) {
+      const modelKey = buildModelKey(sourceFileId, model.model_id);
+      models.push({
+        ...model,
+        model_key: modelKey,
+        payload_model_key: buildPayloadModelKey(
+          sourceFileIndex,
+          model.model_id,
+        ),
+        source_file_id: sourceFileId,
+        source_file_index: sourceFileIndex,
+        source_filename: sourceFilename,
+      });
+    }
 
-    cards.push(
-      ...parsedFile.data.cards.map((card) => ({
+    for (const note of parsedFile.data.notes) {
+      const modelKey = buildModelKey(sourceFileId, note.model_id);
+      notes.push({
+        ...note,
+        model_key: modelKey,
+        payload_model_key: buildPayloadModelKey(sourceFileIndex, note.model_id),
+        source_file_id: sourceFileId,
+        source_file_index: sourceFileIndex,
+        source_filename: sourceFilename,
+        note_key: buildSourceEntityKey(sourceFileId, note.note_id),
+      });
+    }
+
+    for (const card of parsedFile.data.cards) {
+      cards.push({
         ...card,
         source_file_id: sourceFileId,
         source_file_index: sourceFileIndex,
         source_filename: sourceFilename,
         card_key: buildSourceEntityKey(sourceFileId, card.card_id),
         note_key: buildSourceEntityKey(sourceFileId, card.note_id),
-      })),
-    );
+      });
+    }
 
     if (includeReviews) {
-      reviews.push(
-        ...parsedFile.data.reviews.map((review) => ({
+      for (const review of parsedFile.data.reviews) {
+        reviews.push({
           ...review,
           source_file_id: sourceFileId,
           source_file_index: sourceFileIndex,
           source_filename: sourceFilename,
           card_key: buildSourceEntityKey(sourceFileId, review.card_id),
-        })),
-      );
+        });
+      }
     }
   });
 
@@ -412,7 +408,7 @@ export function initializeDeckReviewConfigs(
   parsedFiles: ParsedFile[],
   existingConfigs: DeckReviewConfigRecord = {},
 ): DeckReviewConfigRecord {
-  const index = buildSubmissionIndex(parsedFiles);
+  const index = buildSubmissionIndex(parsedFiles, { includeReviews: false });
   const nextConfigs: DeckReviewConfigRecord = {};
 
   for (const deck of index.directDecks) {
@@ -442,7 +438,7 @@ export function initializeExcludedNoteIds(
   parsedFiles: ParsedFile[],
   existingExcludedNoteIds: Set<number> = new Set<number>(),
 ): Set<number> {
-  const index = buildSubmissionIndex(parsedFiles);
+  const index = buildSubmissionIndex(parsedFiles, { includeReviews: false });
 
   return new Set(
     [...existingExcludedNoteIds].filter((noteId) => index.noteMap.has(noteId)),
@@ -457,7 +453,7 @@ export function initializeExcludedFieldsByModelKey(
   parsedFiles: ParsedFile[],
   existingExcludedFieldsByModelKey: Record<ModelKey, Set<number>> = {},
 ): Record<ModelKey, Set<number>> {
-  const index = buildSubmissionIndex(parsedFiles);
+  const index = buildSubmissionIndex(parsedFiles, { includeReviews: false });
   const nextExcludedFieldsByModelKey: Record<ModelKey, Set<number>> = {};
 
   for (const model of index.models) {
@@ -493,7 +489,7 @@ export function initializeDeckAssignments(
   existingAssignments: Record<string, unknown> = {},
   fallbackScheduler: SchedulerKind | null = null,
 ): DeckAssignmentRecord {
-  const index = buildSubmissionIndex(parsedFiles);
+  const index = buildSubmissionIndex(parsedFiles, { includeReviews: false });
   const nextAssignments: DeckAssignmentRecord = {};
 
   for (const deck of index.directDecks) {
